@@ -7,7 +7,7 @@ export async function GET(request:Request,context:{params:Promise<{id:string}>})
  if(key.startsWith('default:'))return Response.redirect(new URL('/defaults/'+key.slice(8),request.url),302);
  const range=request.headers.get('range');const object=await bucket.get(key,range?{range:request.headers}:{});if(!object)return new Response('Not found',{status:404});
  const headers=new Headers({'Cache-Control':'private, max-age=3600','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff'});object.writeHttpMetadata(headers);headers.set('ETag',object.httpEtag);
- let status=200;if(object.range&&'offset' in object.range&&'length' in object.range){const start=object.range.offset??0,length=object.range.length??object.size;headers.set('Content-Range',`bytes ${start}-${start+length-1}/${object.size}`);headers.set('Content-Length',String(length));status=206;}else headers.set('Content-Length',String(object.size));
+ let status=200;if(range&&object.range&&'offset' in object.range&&'length' in object.range){const start=object.range.offset??0,length=object.range.length??object.size;headers.set('Content-Range',`bytes ${start}-${start+length-1}/${object.size}`);headers.set('Content-Length',String(length));status=206;}else headers.set('Content-Length',String(object.size));
  if(url.searchParams.get('download')==='1')headers.set('Content-Disposition',`attachment; filename="reading-${id}.wav"`);
  return new Response(object.body,{status,headers});}catch(e){return fail(e,503);}
 }
