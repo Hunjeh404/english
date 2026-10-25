@@ -5,5 +5,11 @@ export const passages = sqliteTable('passages', {
  goal:integer('goal').notNull().default(5),createdAt:text('created_at').notNull(),deletedAt:text('deleted_at'),
 });
 export const completions=sqliteTable('completions',{
- id:text('id').primaryKey(),passageId:text('passage_id').notNull().references(()=>passages.id,{onDelete:'cascade'}),createdAt:text('created_at').notNull(),
+ id:text('id').primaryKey(),userId:text('user_id'),passageId:text('passage_id').notNull().references(()=>passages.id,{onDelete:'cascade'}),createdAt:text('created_at').notNull(),
+});
+
+export const listeningPreferences=sqliteTable('listening_preferences',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ passageId:text('passage_id').notNull().references(()=>passages.id,{onDelete:'cascade'}),
+ goal:integer('goal').notNull(),
 });

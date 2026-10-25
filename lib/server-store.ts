@@ -14,5 +14,5 @@ export function fail(error: unknown, status = 400) {
 }
 export const validId = (id: string) => /^[a-f0-9-]{36}$/i.test(id);
 export async function getPassage(db: D1Database, id: string) {
-  return db.prepare('SELECT p.*, (SELECT count(*) FROM completions c WHERE c.passage_id=p.id) completed FROM passages p WHERE p.id=? AND p.deleted_at IS NULL').bind(id).first();
+ return db.prepare('SELECT * FROM passages WHERE id=? AND deleted_at IS NULL').bind(id).first();
 }
