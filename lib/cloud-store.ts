@@ -19,7 +19,15 @@ export async function cloudApi(url:string,options?:RequestInit):Promise<unknown>
  if(url==='/api/passages'&&method==='POST')return saveReading(options!.body as FormData);
  const match=/^\/api\/passages\/([a-f\d-]{36})(\/complete)?$/.exec(url);if(!match)throw new Error('지원하지 않는 요청입니다.');
  const id=match[1],payload=options?.body?JSON.parse(String(options.body)):{};
- if(method==='PATCH'){if(Object.keys(payload).some(k=>k!=='goal'))throw new Error('확정한 본문은 수정할 수 없습니다.');const user=await verifyAccount();unwrap(await c.from('english_listening_preferences').upsert({user_id:user.id,passage_id:id,goal:payload.goal}));return {goal:payload.goal};}
+ if(method==='PATCH'){
+  const user=await verifyAccount(),keys=Object.keys(payload);
+  if(keys.length===1&&keys[0]==='title'){
+   if(!user.canUpload)throw new Error('제목 수정 권한이 없습니다.');const title=String(payload.title||'').trim();if(!title||title.length>120)throw new Error('제목은 1~120자로 입력해 주세요.');
+   const changed=unwrap(await c.from('english_readings').update({title}).eq('id',id).is('deleted_at',null).select('id').single());if(!changed)throw new Error('항목을 찾을 수 없습니다.');return {title};
+  }
+  if(keys.length!==1||keys[0]!=='goal')throw new Error('확정한 본문은 수정할 수 없습니다.');
+  unwrap(await c.from('english_listening_preferences').upsert({user_id:user.id,passage_id:id,goal:payload.goal}));return {goal:payload.goal};
+ }
  if(method==='POST'&&match[2]){const user=await verifyAccount();unwrap(await c.from('english_completions').upsert({id:payload.playId,passage_id:id,user_id:user.id},{onConflict:'id',ignoreDuplicates:true}));return {completed:0};}
  if(method==='DELETE'){
   const account=await verifyAccount();if(!account.canUpload)throw new Error('삭제 권한이 없습니다.');
