@@ -13,7 +13,7 @@ async function getEncoder(status:(s:string)=>void){
   const f=new FFmpeg();encoder=f;
   const base='https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
   const urls=await Promise.all([toBlobURL(base+'/ffmpeg-core.js','text/javascript'),toBlobURL(base+'/ffmpeg-core.wasm','application/wasm')]);
-  try{if(epoch!==generation)throw new Error('내보내기를 취소했습니다.');await f.load({classWorkerURL:location.origin+'/vendor/ffmpeg/worker.js',coreURL:urls[0],wasmURL:urls[1]});return f;}
+  try{if(epoch!==generation)throw new Error('내보내기를 취소했습니다.');await f.load({classWorkerURL:location.origin+import.meta.env.BASE_URL+'vendor/ffmpeg/worker.js',coreURL:urls[0],wasmURL:urls[1]});return f;}
   catch(e){if(encoder===f)releaseEncoder();throw e;}finally{urls.forEach(u=>URL.revokeObjectURL(u));}
  })();return loading;
 }
