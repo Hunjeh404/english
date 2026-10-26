@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
 import {seekTime,repeatTarget} from '../lib/playback.ts';
+import {filterReadings} from '../lib/library.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
 test('WAV contains PCM mono samples, correct duration, and identical start/end chimes',()=>{const bell=chime(),samples=[bell,new Float32Array(24000),bell],wav=pcmToWav(samples),view=new DataView(wav);assert.equal(view.getUint32(0),0x52494646);assert.equal(view.getUint32(8),0x57415645);assert.equal(view.getUint32(24,true),24000);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.equal(wav.byteLength,44+(24000+2*bell.length)*2);const bytes=new Uint8Array(wav);assert.deepEqual(bytes.slice(44,44+bell.length*2),bytes.slice(-bell.length*2));assert.ok(Math.max(...bell)<1);assert.ok(bell.some(v=>v!==0));});
 
@@ -18,4 +19,11 @@ test('A-B repeat restarts exactly at its endpoint and stays off until enabled',(
  assert.equal(repeatTarget(120,range),3.5);assert.equal(repeatTarget(0,range),3.5);
  assert.equal(repeatTarget(10,{...range,enabled:false}),null);
  assert.equal(repeatTarget(10,{...range,end:null}),null);
+});
+test('folders distinguish all, unfiled, and selected readings while applying title search',()=>{
+ const items=[{id:'1',title:'British Laws',folder_id:null},{id:'2',title:'Nature',folder_id:'science'},{id:'3',title:'British Animals',folder_id:'science'},{id:'4',title:'History'}];
+ assert.equal(filterReadings(items,'all').length,4);
+ assert.deepEqual(filterReadings(items,'unfiled').map(p=>p.id),['1','4']);
+ assert.deepEqual(filterReadings(items,'science','BRITISH').map(p=>p.id),['3']);
+ assert.deepEqual(filterReadings(items,'empty'),[]);
 });

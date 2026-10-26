@@ -4,8 +4,8 @@ import {formatTime,uuid} from '../lib/reading-core';
 import {cloudApi} from '../lib/cloud-store';
 
 type AudioFile={file:File;url:string;duration:number;id:string};
-export default function AudioUpload({busy,onBusy,onSaved}:{busy:boolean;onBusy:(value:boolean)=>void;onSaved:(id:string)=>Promise<void>}){
- const [audio,setAudio]=useState<AudioFile|null>(null),[title,setTitle]=useState(''),[body,setBody]=useState(''),[goal,setGoal]=useState(5),[error,setError]=useState('');
+export default function AudioUpload({busy,onBusy,onSaved,folderId}:{folderId:string|null;busy:boolean;onBusy:(value:boolean)=>void;onSaved:(id:string)=>Promise<void>}){
+ const [audio,setAudio]=useState<AudioFile|null>(null),[title,setTitle]=useState(''),[body,setBody]=useState(''),[goal,setGoal]=useState(10),[error,setError]=useState('');
  const fileRef=useRef<AudioFile|null>(null),live=useRef(true);
  useEffect(()=>{live.current=true;return()=>{live.current=false;if(fileRef.current)URL.revokeObjectURL(fileRef.current.url);};},[]);
  async function choose(e:ChangeEvent<HTMLInputElement>){
@@ -22,7 +22,7 @@ export default function AudioUpload({busy,onBusy,onSaved}:{busy:boolean;onBusy:(
   finally{clearTimeout(timer);probe.removeAttribute('src');probe.load();onBusy(false);}
  }
  async function save(){if(!audio||!title.trim()||busy)return;onBusy(true);setError('');try{
-  const form=new FormData();form.set('id',audio.id);form.set('title',title.trim());form.set('body',body.trim());form.set('voice','uploaded');form.set('goal',String(goal));form.set('duration',String(audio.duration));form.set('audio',audio.file);
+  const form=new FormData();form.set('id',audio.id);form.set('title',title.trim());form.set('body',body.trim());form.set('voice','uploaded');form.set('goal',String(goal));form.set('duration',String(audio.duration));form.set('audio',audio.file);if(folderId)form.set('folder_id',folderId);
   await cloudApi('/api/passages',{method:'POST',body:form});await onSaved(audio.id);
  }catch(e){if(live.current)setError((e as Error).message);}finally{onBusy(false);}}
  return <div className="audio-upload">

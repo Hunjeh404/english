@@ -4,7 +4,8 @@ export const VOICES = [
   { id: 'bm_george', name: 'George', label: '남성 · 영국 영어' },
   { id: 'bm_fable', name: 'Fable', label: '남성 · 영국 영어' },
 ] as const;
-export type Passage = { id: string; title: string; body: string; voice: string; images: string; duration: number; goal: number; created_at: string; completed: number };
+export type Passage = { id: string; title: string; body: string; voice: string; images: string; duration: number; goal: number; created_at: string; completed: number; folder_id?:string|null };
+export type ReadingFolder={id:string;name:string};
 export function splitForSpeech(text: string, limit = 270): string[] {
  const chunks: string[] = []; let chunk = '';
  for(const word of text.trim().split(/\s+/)) {
