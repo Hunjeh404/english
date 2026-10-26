@@ -43,7 +43,7 @@ async function saveReading(form:FormData){
  const c=getAuthClient(),user=await verifyAccount();if(!user.canUpload)throw new Error('서버 업로드 권한이 없습니다.');
  const id=String(form.get('id')),audio=form.get('audio') as File,images=form.getAll('images') as File[];
  const title=String(form.get('title')||'').trim(),body=String(form.get('body')||'').trim(),voice=String(form.get('voice')||'');
- if(!/^[a-f\d-]{36}$/.test(id)||!title||!body||title.length>120||body.length>8000)throw new Error('제목과 본문을 확인해 주세요.');
+ if(!/^[a-f\d-]{36}$/.test(id)||!title||(!body&&voice!=='uploaded')||title.length>120||body.length>8000)throw new Error('제목과 본문을 확인해 주세요.');
  if(!(audio instanceof Blob)||audio.size>40*1024*1024||images.length>8)throw new Error('음원은 40MB, 사진은 8장까지 가능합니다.');
  const bytes=new Uint8Array(await audio.slice(0,16).arrayBuffer()),text=new TextDecoder().decode(bytes);let extension='',contentType='';
  if(text.startsWith('RIFF')&&text.slice(8,12)==='WAVE'){extension='wav';contentType='audio/wav';}
