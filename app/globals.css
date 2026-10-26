@@ -26,3 +26,25 @@
 @media(max-width:620px){.library-folders{grid-column:1/-1}.folder-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:170px}.folder-list>button{font-size:11px;min-height:38px}.draft-folder select{flex:1;max-width:none}.reading-folder-row select{flex:1;max-width:none}}
 .photo-settings{margin:24px 0;border-top:1px solid var(--line);padding-top:18px}.photo-settings summary{cursor:pointer;color:#718368;font-size:13px;font-weight:600}.modal #reading-sort{width:100%;margin-bottom:22px}.photo-settings .external-link{margin-bottom:0}
 .arrow-seek-setting{display:flex;align-items:center;gap:12px;margin-bottom:24px;color:#718368;font-size:12px}.arrow-seek-setting input{width:90px}
+/* Keep library navigation and playback within reach while the page scrolls. */
+.sidebar{position:sticky;top:0;align-self:start;height:100dvh;overflow-y:auto;scrollbar-width:thin}
+.sidebar .library-list{flex-shrink:0}
+.player{position:sticky;bottom:0;z-index:15;background:#f7f7f0;box-shadow:0 -10px 20px #f7f7f0dd;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+@media(max-width:620px){
+ .workspace{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:13px 12px;align-items:start}
+ .sidebar{display:contents}
+ .sidebar.mobile-hide{display:none}
+ .sidebar>.side-title{margin:20px 0 0 20px}
+ .sidebar>.add-button{margin:20px 20px 0 0}
+ .sidebar>.search,.sidebar>.library-folders{grid-column:1/-1;margin:0 20px;width:calc(100% - 40px)}
+ .sidebar>.library-list{position:sticky;top:0;z-index:20;align-self:start;min-width:0;max-height:128px;margin:0;padding:10px 20px;background:#f4f5ec;border-bottom:1px solid var(--line);box-shadow:0 4px 10px #263d3b0b}
+ .library-list .passage-card{min-width:190px;max-width:225px;padding:8px 11px}
+ .library-list .card-copy strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+ .library-list .card-copy small{margin-top:4px}
+ .library-list .mini-track{margin-top:6px}
+ .library-list .card-copy .card-progress{margin-top:4px}
+ .main-panel{grid-column:1/-1}
+ .player{position:sticky;bottom:0;padding-top:14px}
+}
+
+.player{top:calc(100dvh - var(--player-height,240px))}
