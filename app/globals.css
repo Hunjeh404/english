@@ -48,3 +48,5 @@
 }
 
 .player{top:calc(100dvh - var(--player-height,240px))}
+
+.reader-view:has(.recording-studio){padding-bottom:var(--player-height,240px)}

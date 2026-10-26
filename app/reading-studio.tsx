@@ -152,7 +152,7 @@ export default function ReadingStudio(){
   window.addEventListener('keydown',onPlaybackKey);return()=>window.removeEventListener('keydown',onPlaybackKey);
  },[view,active?.id,playing,paused,speed,recordingOpen,arrowStep]);
  useEffect(()=>{updateLoop({start:0,end:null,enabled:false});},[selected]);
- useEffect(()=>{const panel=playerPanel.current;if(!panel)return;const measure=()=>panel.style.setProperty('--player-height',`${panel.offsetHeight}px`);const observer=new ResizeObserver(measure);observer.observe(panel);measure();return()=>observer.disconnect();},[view,active?.id]);
+ useEffect(()=>{const panel=playerPanel.current;if(!panel)return;const measure=()=>panel.parentElement?.style.setProperty('--player-height',`${panel.offsetHeight}px`);const observer=new ResizeObserver(measure);observer.observe(panel);measure();return()=>observer.disconnect();},[view,active?.id]);
  const filtered=sortReadings(filterReadings(items,folderFilter,search),sortOrder);
  const orderedFolders=sortFolders(folders);
  return <div className="studio-shell">
