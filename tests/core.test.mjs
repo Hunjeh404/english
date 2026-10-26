@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
 import {seekTime,repeatTarget} from '../lib/playback.ts';
-import {filterReadings} from '../lib/library.ts';
+import {filterReadings,sortReadings,folderNavigation,isReadingSort} from '../lib/library.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
 test('WAV contains PCM mono samples, correct duration, and identical start/end chimes',()=>{const bell=chime(),samples=[bell,new Float32Array(24000),bell],wav=pcmToWav(samples),view=new DataView(wav);assert.equal(view.getUint32(0),0x52494646);assert.equal(view.getUint32(8),0x57415645);assert.equal(view.getUint32(24,true),24000);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.equal(wav.byteLength,44+(24000+2*bell.length)*2);const bytes=new Uint8Array(wav);assert.deepEqual(bytes.slice(44,44+bell.length*2),bytes.slice(-bell.length*2));assert.ok(Math.max(...bell)<1);assert.ok(bell.some(v=>v!==0));});
 
@@ -26,4 +26,18 @@ test('folders distinguish all, unfiled, and selected readings while applying tit
  assert.deepEqual(filterReadings(items,'unfiled').map(p=>p.id),['1','4']);
  assert.deepEqual(filterReadings(items,'science','BRITISH').map(p=>p.id),['3']);
  assert.deepEqual(filterReadings(items,'empty'),[]);
+});
+test('reading sorting supports natural names, dates, and exact reverse order without mutation',()=>{
+ const items=[{id:'a',title:'Lesson 10',created_at:'2026-10-01T00:00:00Z'},{id:'b',title:'Lesson 2',created_at:'2026-10-03T00:00:00Z'},{id:'c',title:'Apple',created_at:'2026-10-02T00:00:00Z'}];
+ assert.deepEqual(sortReadings(items,'name-asc').map(p=>p.id),['c','b','a']);
+ assert.deepEqual(sortReadings(items,'name-desc').map(p=>p.id),['a','b','c']);
+ assert.deepEqual(sortReadings(items,'date-desc').map(p=>p.id),['b','c','a']);
+ assert.deepEqual(sortReadings(items,'date-asc').map(p=>p.id),['a','c','b']);
+ assert.deepEqual(items.map(p=>p.id),['a','b','c']);
+ assert.equal(isReadingSort('date-desc'),true);assert.equal(isReadingSort('random'),false);
+});
+test('folders use name order and always place unfiled last',()=>{
+ const folders=[{id:'3',name:'Unit 10'},{id:'1',name:'Apple'},{id:'2',name:'Unit 2'}];
+ assert.deepEqual(folderNavigation(folders).map(f=>f.id),['all','1','2','3','unfiled']);
+ assert.deepEqual(folders.map(f=>f.id),['3','1','2']);
 });
