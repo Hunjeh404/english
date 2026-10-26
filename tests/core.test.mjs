@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
 import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta,arrowVolumeDelta,clampVolume,ListeningClock} from '../lib/playback.ts';
 import {filterReadings,sortReadings,folderNavigation,isReadingSort} from '../lib/library.ts';
+import {estimateRoundTrip,stemPlacement,stemDuration,bufferWav} from '../lib/stem-audio.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
 test('WAV contains PCM mono samples, correct duration, and identical start/end chimes',()=>{const bell=chime(),samples=[bell,new Float32Array(24000),bell],wav=pcmToWav(samples),view=new DataView(wav);assert.equal(view.getUint32(0),0x52494646);assert.equal(view.getUint32(8),0x57415645);assert.equal(view.getUint32(24,true),24000);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.equal(wav.byteLength,44+(24000+2*bell.length)*2);const bytes=new Uint8Array(wav);assert.deepEqual(bytes.slice(44,44+bell.length*2),bytes.slice(-bell.length*2));assert.ok(Math.max(...bell)<1);assert.ok(bell.some(v=>v!==0));});
 
@@ -70,4 +73,40 @@ test('vertical arrows change volume by five percentage points within bounds',()=
  assert.equal(arrowVolumeDelta('ArrowRight'),0);
  assert.equal(clampVolume(1.05),1);assert.equal(clampVolume(-.05),0);
  assert.equal(clampVolume(.95+arrowVolumeDelta('ArrowUp')),1);
+});
+test('automatic sync uses reported latency and never invents missing device delay',()=>{
+ assert.equal(estimateRoundTrip(.02,.01,.15).milliseconds,180);
+ assert.equal(estimateRoundTrip(undefined,.01,.15).milliseconds,160);
+ assert.equal(estimateRoundTrip(undefined,.01,undefined).available,false);
+ assert.equal(estimateRoundTrip(undefined,.01,undefined).milliseconds,0);
+ assert.equal(estimateRoundTrip(NaN,Infinity,-1).available,false);
+});
+test('stem offsets trim early samples, delay late samples and remain correct after seeking',()=>{
+ assert.deepEqual(stemPlacement(10,-200),{offset:.2,delay:0,remaining:9.8});
+ assert.deepEqual(stemPlacement(10,200),{offset:0,delay:.2,remaining:10});
+ assert.deepEqual(stemPlacement(10,200,2),{offset:1.8,delay:0,remaining:8.2});
+ assert.equal(stemPlacement(10,0,10),null);
+ assert.equal(stemDuration(10,12,{voiceGain:1,musicGain:1,voiceShiftMs:3000,musicShiftMs:0}),13);
+});
+test('separate-track WAV retains stereo ordering, rate and PCM sample values',async()=>{
+ const buffer={numberOfChannels:2,length:2,sampleRate:48000,getChannelData:i=>new Float32Array(i?[0,-1]:[1,.5])};
+ const data=new DataView(await bufferWav(buffer).arrayBuffer());
+ assert.equal(data.byteLength,52);assert.equal(data.getUint16(22,true),2);assert.equal(data.getUint32(24,true),48000);
+ assert.equal(data.getInt16(44,true),32767);assert.equal(data.getInt16(46,true),0);assert.equal(data.getInt16(50,true),-32768);
+});
+function microphoneProcessor(){
+ const messages=[];let Processor;
+ const scope={currentFrame:0,AudioWorkletProcessor:class{constructor(){this.port={postMessage:message=>messages.push(message)};}},registerProcessor:(_name,type)=>{Processor=type;}};
+ runInNewContext(readFileSync(new URL('../public/pcm-recorder-worklet.js',import.meta.url),'utf8'),scope);
+ return {processor:new Processor(),scope,messages};
+}
+test('microphone recording aligns exact sample frames with the backing clock',()=>{
+ const {processor,scope,messages}=microphoneProcessor();processor.port.onmessage({data:{type:'start',startFrame:32,stopFrame:288}});
+ for(const frame of [0,128,256]){scope.currentFrame=frame;processor.process([[new Float32Array(128).fill(1),new Float32Array(128)]],[[new Float32Array(128)]]);}
+ const chunks=messages.filter(m=>m.type==='chunk');assert.equal(chunks[0].offset,0);assert.equal(chunks[0].samples.length,256);assert.ok(Array.from(chunks[0].samples).every(v=>v===.5));assert.equal(messages.at(-1).frames,256);
+});
+test('manual stop flushes the raw microphone tail once without adding playback audio',()=>{
+ const {processor,scope,messages}=microphoneProcessor();processor.port.onmessage({data:{type:'start',startFrame:16,stopFrame:1000}});
+ processor.process([[new Float32Array(128).fill(.25)]],[[new Float32Array(128)]]);scope.currentFrame=128;processor.port.onmessage({data:{type:'stop'}});processor.port.onmessage({data:{type:'stop'}});
+ assert.equal(messages.filter(m=>m.type==='done').length,1);assert.equal(messages.at(-1).frames,112);assert.equal(messages[0].samples.length,112);assert.ok(Array.from(messages[0].samples).every(v=>v===.25));
 });

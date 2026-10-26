@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Headphones, Pencil, Plus, BookOpen, Play, Pause, Square, Settings, X, Upload, ScanText, LockKeyhole, CloudCheck, ChevronRight, Trash2, Download, Check, Volume2, LoaderCircle, ArrowLeft, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { VOICES, chime, pcmToWav, formatTime, uuid, type Passage, type ReadingFolder } from '../lib/reading-core';
 import {getAuthClient} from '../lib/supabase-client';
@@ -7,7 +7,7 @@ import {DEFAULT_READING} from '../lib/default-reading';
 import type {GoogleAccount} from '../lib/access-policy';
 import {cloudApi as api,verifyAccount,clearMedia,mediaUrl,asset} from '../lib/cloud-store';
 import {recognizePhotos} from '../lib/ocr';
-import RecordingStudio from './recording-studio';
+const RecordingStudio=lazy(()=>import('./recording-studio'));
 import AudioUpload from './audio-upload';
 import LibraryFolders from './library-folders';
 import {filterReadings,sortReadings,sortFolders,READING_SORTS,isReadingSort,type ReadingSort} from '../lib/library';
@@ -184,7 +184,7 @@ export default function ReadingStudio(){
      <div className="seek-buttons" role="group" aria-label="재생 시간 이동"><div>{[10,5,3,1].map(n=><button key={n} aria-label={`${n}초 뒤로`} disabled={recordingOpen} onClick={()=>moveTo(currentTime()-n)}>−{n}초</button>)}</div><div>{[1,3,5,10].map(n=><button key={n} aria-label={`${n}초 앞으로`} disabled={recordingOpen} onClick={()=>moveTo(currentTime()+n)}>+{n}초</button>)}</div></div>
      <div className="loop-controls" role="group" aria-label="구간 반복"><button disabled={recordingOpen} onClick={()=>setLoopPoint('a')}>A 시작 <span>{formatTime(loop.start)}</span></button><button disabled={recordingOpen} onClick={()=>setLoopPoint('b')}>B 끝 <span>{loop.end===null?'—':formatTime(loop.end)}</span></button><button className={loop.enabled?'enabled':''} aria-pressed={loop.enabled} disabled={loop.end===null||recordingOpen} onClick={toggleLoop}>구간 반복 {loop.enabled?'켜짐':'꺼짐'}</button><button aria-label="반복 구간 초기화" disabled={recordingOpen} onClick={()=>updateLoop({start:0,end:null,enabled:false})}><RotateCcw size={15}/></button></div>
     </div>
-    {recordingOpen&&<RecordingStudio key={active.id} folderId={active.folder_id} title={active.title} body={active.body} audioUrl={mediaUrl(active)} images={(JSON.parse(active.images) as string[]).map((_,i)=>mediaUrl(active,'image',i))} canUpload={canUpload} onClose={()=>setRecordingOpen(false)} onSaved={async(id)=>{await refresh();choose(id);setNotice('음원을 새 리딩으로 저장했습니다.');}}/>}{recordingOpen&&<div className="player-clearance" aria-hidden="true"/>}
+    {recordingOpen&&<Suspense fallback={<p role="status" className="helper">녹음실을 불러오는 중…</p>}><RecordingStudio key={active.id} folderId={active.folder_id} title={active.title} body={active.body} audioUrl={mediaUrl(active)} images={(JSON.parse(active.images) as string[]).map((_,i)=>mediaUrl(active,'image',i))} canUpload={canUpload} onClose={()=>setRecordingOpen(false)} onSaved={async(id)=>{await refresh();choose(id);setNotice('음원을 새 리딩으로 저장했습니다.');}}/></Suspense>}{recordingOpen&&<div className="player-clearance" aria-hidden="true"/>}
    </section>:<section className="welcome"><div className="welcome-art"><div className="orbit one"/><div className="orbit two"/><BookOpen size={69} strokeWidth={1.2}/><span className="music-note">♪</span><span className="art-star">✦</span></div><span className="eyebrow">A LITTLE LISTENING, EVERY DAY</span><h1>한 편의 이야기.<br/>나만의 영국 영어 시간.</h1><p>교재 사진이나 영어 본문을 담아보세요.<br/>확인한 문장이 자연스러운 목소리가 됩니다.</p><button className="primary" onClick={newDraft}><Plus size={18}/>첫 번째 리딩 만들기</button><div className="welcome-features"><span><ScanText size={16}/>사진에서 본문 추출</span><span><Volume2 size={16}/>영국 영어 음성</span><span><Check size={16}/>한 번씩 듣기 기록</span></div></section>}
   </main></div><footer className="app-footer"><span>reading studio</span><span>Read. Listen. Make it yours.</span></footer>
   {settings&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><button className="modal-close icon-btn" aria-label="설정 닫기" onClick={()=>setSettings(false)}><X size={21}/></button><h2 id="settings-title">설정</h2><label className="field-label" htmlFor="reading-sort">음원 목록 정렬</label><select id="reading-sort" value={sortDraft} onChange={e=>{if(isReadingSort(e.target.value))setSortDraft(e.target.value);}}>{READING_SORTS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select><label className="field-label" htmlFor="arrow-seconds">좌우 방향키 이동 시간</label><div className="arrow-seek-setting"><input id="arrow-seconds" type="number" min="1" max="60" step="1" value={arrowDraft} onChange={e=>setArrowDraft(e.target.value)}/><span>초</span></div>
