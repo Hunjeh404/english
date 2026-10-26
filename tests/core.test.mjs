@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
-import {seekTime,repeatTarget} from '../lib/playback.ts';
+import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta} from '../lib/playback.ts';
 import {filterReadings,sortReadings,folderNavigation,isReadingSort} from '../lib/library.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
 test('WAV contains PCM mono samples, correct duration, and identical start/end chimes',()=>{const bell=chime(),samples=[bell,new Float32Array(24000),bell],wav=pcmToWav(samples),view=new DataView(wav);assert.equal(view.getUint32(0),0x52494646);assert.equal(view.getUint32(8),0x57415645);assert.equal(view.getUint32(24,true),24000);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.equal(wav.byteLength,44+(24000+2*bell.length)*2);const bytes=new Uint8Array(wav);assert.deepEqual(bytes.slice(44,44+bell.length*2),bytes.slice(-bell.length*2));assert.ok(Math.max(...bell)<1);assert.ok(bell.some(v=>v!==0));});
@@ -40,4 +40,10 @@ test('folders use name order and always place unfiled last',()=>{
  const folders=[{id:'3',name:'Unit 10'},{id:'1',name:'Apple'},{id:'2',name:'Unit 2'}];
  assert.deepEqual(folderNavigation(folders).map(f=>f.id),['all','1','2','3','unfiled']);
  assert.deepEqual(folders.map(f=>f.id),['3','1','2']);
+});
+test('arrow seeking defaults to three seconds and accepts only whole seconds in range',()=>{
+ assert.equal(arrowSeekDelta('ArrowLeft',3),-3);assert.equal(arrowSeekDelta('ArrowRight',3),3);
+ assert.equal(arrowSeekDelta('ArrowRight',10),10);assert.equal(arrowSeekDelta('ArrowUp',3),0);
+ for(const value of [1,3,60])assert.equal(isArrowSeekStep(value),true);
+ for(const value of [0,-1,1.5,61,NaN,Infinity])assert.equal(isArrowSeekStep(value),false);
 });

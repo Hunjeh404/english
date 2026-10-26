@@ -11,7 +11,7 @@ import RecordingStudio from './recording-studio';
 import AudioUpload from './audio-upload';
 import LibraryFolders from './library-folders';
 import {filterReadings,sortReadings,sortFolders,READING_SORTS,isReadingSort,type ReadingSort} from '../lib/library';
-import {activeLoop,repeatTarget,seekTime,type PlaybackLoop} from '../lib/playback';
+import {activeLoop,repeatTarget,seekTime,isArrowSeekStep,arrowSeekDelta,type PlaybackLoop} from '../lib/playback';
 import type {Session} from '@supabase/supabase-js';
 
 type Photo={file:File;url:string};
@@ -25,6 +25,7 @@ export default function ReadingStudio(){
  const [folders,setFolders]=useState<ReadingFolder[]>([]),[folderFilter,setFolderFilter]=useState('all'),[draftFolder,setDraftFolder]=useState<string|null>(null);
  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settings,setSettings]=useState(false);
  const [sortOrder,setSortOrder]=useState<ReadingSort>('date-desc'),[sortDraft,setSortDraft]=useState<ReadingSort>('date-desc');
+ const [arrowStep,setArrowStep]=useState(3),[arrowDraft,setArrowDraft]=useState('3');
  const [inputMode,setInputMode]=useState<'photo'|'text'|'audio'>('photo');
  const [title,setTitle]=useState(''),[body,setBody]=useState(''),[photos,setPhotos]=useState<Photo[]>([]),[voice,setVoice]=useState('bf_emma'),[goal,setGoal]=useState(10),[confirmed,setConfirmed]=useState(false),[warnings,setWarnings]=useState<string[]>([]);
  const [key,setKey]=useState(''),[model,setModel]=useState('gemini-3.1-flash-lite');
@@ -59,6 +60,7 @@ export default function ReadingStudio(){
  useEffect(()=>{
   setKey(sessionStorage.getItem('english-gemini')||'');
   try{const saved=localStorage.getItem('english-list-sort');if(isReadingSort(saved)){setSortOrder(saved);setSortDraft(saved);}}catch{}
+  try{const seconds=Number(localStorage.getItem('english-arrow-seconds'));if(isArrowSeekStep(seconds)){setArrowStep(seconds);setArrowDraft(String(seconds));}}catch{}
   const draft=localStorage.getItem('english-draft');if(draft){try{const d=JSON.parse(draft);setTitle(d.title||'');setBody(d.body||'');setVoice(d.voice||'bf_emma');}catch{}}
   let live=true,lastToken:string|null|undefined;let chain=Promise.resolve();
   const synchronize=async(session:Session|null)=>{
@@ -85,7 +87,7 @@ export default function ReadingStudio(){
  useEffect(()=>{const onLeave=(e:BeforeUnloadEvent)=>{if(busyRef.current){e.preventDefault();}};window.addEventListener('beforeunload',onLeave);return()=>window.removeEventListener('beforeunload',onLeave);},[]);
  function stop(){cancelAnimationFrame(loopFrame.current);readingAudio.current=null;cue.current=0;audio.current?.pause();if(audio.current)audio.current.currentTime=0;playId.current=null;setPlaying(false);setPaused(false);setElapsed(0);}
  function choose(id:string){stop();updateLoop({start:0,end:null,enabled:false});setEditingTitle(false);setRecordingOpen(false);setSelected(id);setView('library');setOriginals(false);setError('');}
- function openSettings(){setSortDraft(sortOrder);setSettings(true);}
+ function openSettings(){setArrowDraft(String(arrowStep));setSortDraft(sortOrder);setSettings(true);}
  function newDraft(){stop();setGoal(10);setDraftFolder(folders.some(f=>f.id===folderFilter)?folderFilter:null);setRecordingOpen(false);setView('create');if(!accountRef.current?.canUpload)setInputMode('text');setError('');setNotice('');}
  function resetDraft(){if(busy)return;setGoal(10);setTitle('');setBody('');photos.forEach(p=>URL.revokeObjectURL(p.url));setPhotos([]);setGenerated(null);setWarnings([]);setConfirmed(false);localStorage.removeItem('english-draft');}
  function selectPhotos(e:ChangeEvent<HTMLInputElement>){const input=Array.from(e.target.files||[]);e.target.value='';if(photos.length+input.length>8){setError('원본 사진은 8장까지 추가할 수 있습니다.');return;}if(input.some(f=>!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>10*1024*1024)){setError('JPG·PNG·WEBP, 한 장에 10MB 이하의 사진을 선택해 주세요.');return;}setPhotos(p=>[...p,...input.map(file=>({file,url:URL.createObjectURL(file)}))]);setConfirmed(false);}
@@ -139,14 +141,16 @@ export default function ReadingStudio(){
  async function renameTitle(){if(!active||!canUpload||busy)return;const value=titleEdit.trim();if(!value||value.length>120)return;const id=active.id;setBusy('save');setError('');try{await api(`/api/passages/${id}`,{method:'PATCH',body:JSON.stringify({title:value})});setItems(list=>list.map(p=>p.id===id?{...p,title:value}:p));setEditingTitle(false);}catch(e){setError((e as Error).message);}finally{setBusy('');}}
  async function remove(){if(!active||deleteTitle!==active.title)return;setBusy('save');try{stop();await api(`/api/passages/${active.id}`,{method:'DELETE'});setDeleting(false);setDeleteTitle('');await refresh();setNotice('리딩과 원본 사진, 음성을 삭제했습니다.');}catch(e){setError((e as Error).message);}finally{setBusy('');}}
  useEffect(()=>{
-  const onSpace=(event:KeyboardEvent)=>{
-   if(event.code!=='Space'||event.repeat||event.ctrlKey||event.altKey||event.metaKey||view!=='library'||recordingOpen||!active)return;
+  const onPlaybackKey=(event:KeyboardEvent)=>{
+   const isSpace=event.code==='Space',delta=arrowSeekDelta(event.code,arrowStep);
+   if((!isSpace&&!delta)||(isSpace&&event.repeat)||event.ctrlKey||event.altKey||event.metaKey||(!isSpace&&event.shiftKey)||view!=='library'||recordingOpen||!active)return;
    const target=event.target as HTMLElement|null;
-   if(target?.closest('input,textarea,select,[contenteditable="true"],[role="textbox"],[role="dialog"]')||document.querySelector('[role="dialog"]'))return;
-   event.preventDefault();if(playing)stop();else void togglePlay();
+   const timeline=target instanceof HTMLInputElement&&target.type==='range'&&target.getAttribute('aria-label')==='음성 재생 위치';
+   if((!timeline&&target?.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]'))||target?.closest('[role="dialog"]')||document.querySelector('[role="dialog"]'))return;
+   event.preventDefault();if(delta)moveTo(currentTime()+delta);else if(playing)stop();else void togglePlay();
   };
-  window.addEventListener('keydown',onSpace);return()=>window.removeEventListener('keydown',onSpace);
- },[view,active?.id,playing,paused,speed,recordingOpen]);
+  window.addEventListener('keydown',onPlaybackKey);return()=>window.removeEventListener('keydown',onPlaybackKey);
+ },[view,active?.id,playing,paused,speed,recordingOpen,arrowStep]);
  useEffect(()=>{updateLoop({start:0,end:null,enabled:false});},[selected]);
  const filtered=sortReadings(filterReadings(items,folderFilter,search),sortOrder);
  const orderedFolders=sortFolders(folders);
@@ -172,9 +176,9 @@ export default function ReadingStudio(){
     {recordingOpen&&<RecordingStudio key={active.id} folderId={active.folder_id} title={active.title} body={active.body} audioUrl={mediaUrl(active)} images={(JSON.parse(active.images) as string[]).map((_,i)=>mediaUrl(active,'image',i))} canUpload={canUpload} onClose={()=>setRecordingOpen(false)} onSaved={async(id)=>{await refresh();choose(id);setNotice('음원을 새 리딩으로 저장했습니다.');}}/>}
    </section>:<section className="welcome"><div className="welcome-art"><div className="orbit one"/><div className="orbit two"/><BookOpen size={69} strokeWidth={1.2}/><span className="music-note">♪</span><span className="art-star">✦</span></div><span className="eyebrow">A LITTLE LISTENING, EVERY DAY</span><h1>한 편의 이야기.<br/>나만의 영국 영어 시간.</h1><p>교재 사진이나 영어 본문을 담아보세요.<br/>확인한 문장이 자연스러운 목소리가 됩니다.</p><button className="primary" onClick={newDraft}><Plus size={18}/>첫 번째 리딩 만들기</button><div className="welcome-features"><span><ScanText size={16}/>사진에서 본문 추출</span><span><Volume2 size={16}/>영국 영어 음성</span><span><Check size={16}/>한 번씩 듣기 기록</span></div></section>}
   </main></div><footer className="app-footer"><span>reading studio</span><span>Read. Listen. Make it yours.</span></footer>
-  {settings&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><button className="modal-close icon-btn" aria-label="설정 닫기" onClick={()=>setSettings(false)}><X size={21}/></button><h2 id="settings-title">설정</h2><label className="field-label" htmlFor="reading-sort">음원 목록 정렬</label><select id="reading-sort" value={sortDraft} onChange={e=>{if(isReadingSort(e.target.value))setSortDraft(e.target.value);}}>{READING_SORTS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>
+  {settings&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><button className="modal-close icon-btn" aria-label="설정 닫기" onClick={()=>setSettings(false)}><X size={21}/></button><h2 id="settings-title">설정</h2><label className="field-label" htmlFor="reading-sort">음원 목록 정렬</label><select id="reading-sort" value={sortDraft} onChange={e=>{if(isReadingSort(e.target.value))setSortDraft(e.target.value);}}>{READING_SORTS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select><label className="field-label" htmlFor="arrow-seconds">좌우 방향키 이동 시간</label><div className="arrow-seek-setting"><input id="arrow-seconds" type="number" min="1" max="60" step="1" value={arrowDraft} onChange={e=>setArrowDraft(e.target.value)}/><span>초</span></div>
    {canUpload&&<details className="photo-settings"><summary>사진 인식 연결</summary><p>Gemini의 이미지 이해 기능으로 교재를 읽습니다. 음성 생성에는 키가 필요하지 않습니다.</p><label className="field-label" htmlFor="gemini-key">Gemini API 키</label><input id="gemini-key" type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)} placeholder="발급받은 키를 여기에 입력"/><p className="helper">키는 이 브라우저 탭에서만 보관하며, 사진 인식 요청에만 사용합니다.</p><label className="field-label" htmlFor="ocr-model">사진 인식 모델</label><select id="ocr-model" value={model} onChange={e=>setModel(e.target.value)}><option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select><p className="helper">무료 제공량 안에서 사용할 수 있습니다. 한도는 계정과 모델에 따라 다르며, 무료 이용 시 제출 내용이 Google 제품 개선에 사용될 수 있습니다.</p><a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="external-link">Google AI Studio에서 무료 키 발급 ↗</a></details>}
-   <button className="primary wide" onClick={()=>{setSortOrder(sortDraft);try{localStorage.setItem('english-list-sort',sortDraft);}catch{}if(canUpload){if(key)sessionStorage.setItem('english-gemini',key.trim());else sessionStorage.removeItem('english-gemini');setKey(key.trim());}setSettings(false);setNotice('설정을 저장했습니다.');}}><Check size={17}/>설정 저장</button></section></div>}
+   <button className="primary wide" disabled={!isArrowSeekStep(Number(arrowDraft))} onClick={()=>{setArrowStep(Number(arrowDraft));setSortOrder(sortDraft);try{localStorage.setItem('english-arrow-seconds',arrowDraft);localStorage.setItem('english-list-sort',sortDraft);}catch{}if(canUpload){if(key)sessionStorage.setItem('english-gemini',key.trim());else sessionStorage.removeItem('english-gemini');setKey(key.trim());}setSettings(false);setNotice('설정을 저장했습니다.');}}><Check size={17}/>설정 저장</button></section></div>}
   {deleting&&active&&<div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><button className="modal-close icon-btn" aria-label="삭제 창 닫기" onClick={()=>setDeleting(false)}><X size={21}/></button><h2 id="delete-title">리딩을 삭제할까요?</h2><p>본문과 원본 사진, 음성, 듣기 기록을 함께 삭제합니다. 아래에 제목을 그대로 입력해 주세요.</p><blockquote>{active.title}</blockquote><input aria-label="삭제할 리딩 제목 확인" value={deleteTitle} onChange={e=>setDeleteTitle(e.target.value)}/><button className="delete-button wide" disabled={deleteTitle!==active.title||!!busy} onClick={remove}><Trash2 size={17}/>영구 삭제</button></section></div>}
  </div>;
 }
