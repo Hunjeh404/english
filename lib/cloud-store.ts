@@ -33,6 +33,11 @@ export async function cloudApi(url:string,options?:RequestInit):Promise<unknown>
  const id=match[1],payload=options?.body?JSON.parse(String(options.body)):{};
  if(method==='PATCH'){
   const user=await verifyAccount(),keys=Object.keys(payload);
+  if(keys.length===1&&keys[0]==='body'){
+   if(!user.canUpload)throw new Error('본문 수정 권한이 없습니다.');
+   if(typeof payload.body!=='string'||payload.body.length>8000)throw new Error('본문은 8,000자 이하로 입력해 주세요.');
+   const body=payload.body.trim();unwrap(await c.from('english_readings').update({body}).eq('id',id).eq('voice','uploaded').is('deleted_at',null).select('id').single());return {body};
+  }
   if(keys.length===1&&keys[0]==='folder_id'){
    if(!user.canUpload)throw new Error('폴더 이동 권한이 없습니다.');const folder_id=payload.folder_id;
    if(folder_id!==null&&(typeof folder_id!=='string'||!/^[a-f\d-]{36}$/.test(folder_id)))throw new Error('폴더를 확인해 주세요.');
