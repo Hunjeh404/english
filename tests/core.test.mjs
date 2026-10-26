@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
-import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta,arrowVolumeDelta,clampVolume,ListeningClock} from '../lib/playback.ts';
+import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta,ListeningClock} from '../lib/playback.ts';
 import {filterReadings,sortReadings,folderNavigation,isReadingSort} from '../lib/library.ts';
 import {estimateRoundTrip,stemPlacement,stemDuration,bufferWav} from '../lib/stem-audio.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
@@ -67,12 +67,6 @@ test('fast playback and skipping to the end do not satisfy the duration requirem
 test('rewinding retains actual listening time without crediting the seek itself',()=>{
  const clock=new ListeningClock();clock.start(0);clock.pause(60000);clock.start(65000);clock.pause(125000);
  assert.equal(clock.qualifies(120,125000),true);
-});
-test('vertical arrows change volume by five percentage points within bounds',()=>{
- assert.equal(arrowVolumeDelta('ArrowUp'),.05);assert.equal(arrowVolumeDelta('ArrowDown'),-.05);
- assert.equal(arrowVolumeDelta('ArrowRight'),0);
- assert.equal(clampVolume(1.05),1);assert.equal(clampVolume(-.05),0);
- assert.equal(clampVolume(.95+arrowVolumeDelta('ArrowUp')),1);
 });
 test('automatic sync uses reported latency and never invents missing device delay',()=>{
  assert.equal(estimateRoundTrip(.02,.01,.15).milliseconds,180);

@@ -1,8 +1,6 @@
 export type PlaybackLoop={start:number;end:number|null;enabled:boolean};
 export function isArrowSeekStep(value:number){return Number.isInteger(value)&&value>=1&&value<=60;}
 export function arrowSeekDelta(code:string,step:number){return code==='ArrowLeft'?-step:code==='ArrowRight'?step:0;}
-export function arrowVolumeDelta(code:string){return code==='ArrowUp'?.05:code==='ArrowDown'?-.05:0;}
-export function clampVolume(value:number){return Math.max(0,Math.min(1,Math.round(value*100)/100));}
 /** Wall-clock time while the media is playing, excluding pauses, stalls and seeks. */
 export class ListeningClock{
  private accumulated=0;
