@@ -50,3 +50,5 @@
 .player{top:calc(100dvh - var(--player-height,240px))}
 
 .player-clearance{height:var(--player-height,240px);pointer-events:none}
+.playback-volume{display:flex;align-items:center;justify-content:center;gap:10px;margin:12px 0 0;color:#718368;font-size:11px}.playback-volume input{min-width:0;width:140px;height:24px;padding:0;border:0;background:transparent;accent-color:var(--green)}.playback-volume strong{width:35px;font-size:10px;font-weight:500;font-variant-numeric:tabular-nums}
+@media(max-width:620px){.playback-volume{margin-top:8px}.playback-volume input{flex:1;max-width:180px}}

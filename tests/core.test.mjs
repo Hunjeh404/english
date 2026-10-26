@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chime,pcmToWav,splitForSpeech} from '../lib/reading-core.ts';
-import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta} from '../lib/playback.ts';
+import {seekTime,repeatTarget,isArrowSeekStep,arrowSeekDelta,arrowVolumeDelta,clampVolume,ListeningClock} from '../lib/playback.ts';
 import {filterReadings,sortReadings,folderNavigation,isReadingSort} from '../lib/library.ts';
 test('speech splitting preserves words, punctuation and tail with bounded chunks',()=>{const input='Good morning! '+('These are important words. '.repeat(40))+'Be sure to wake it up at 6:59.';const chunks=splitForSpeech(input);assert.ok(chunks.every(c=>c.length<=270));assert.equal(chunks.join(' ').replace(/\s+/g,' ').trim(),input.replace(/\s+/g,' ').trim());});
 test('WAV contains PCM mono samples, correct duration, and identical start/end chimes',()=>{const bell=chime(),samples=[bell,new Float32Array(24000),bell],wav=pcmToWav(samples),view=new DataView(wav);assert.equal(view.getUint32(0),0x52494646);assert.equal(view.getUint32(8),0x57415645);assert.equal(view.getUint32(24,true),24000);assert.equal(view.getUint16(22,true),1);assert.equal(view.getUint32(40,true),wav.byteLength-44);assert.equal(wav.byteLength,44+(24000+2*bell.length)*2);const bytes=new Uint8Array(wav);assert.deepEqual(bytes.slice(44,44+bell.length*2),bytes.slice(-bell.length*2));assert.ok(Math.max(...bell)<1);assert.ok(bell.some(v=>v!==0));});
@@ -46,4 +46,28 @@ test('arrow seeking defaults to three seconds and accepts only whole seconds in 
  assert.equal(arrowSeekDelta('ArrowRight',10),10);assert.equal(arrowSeekDelta('ArrowUp',3),0);
  for(const value of [1,3,60])assert.equal(isArrowSeekStep(value),true);
  for(const value of [0,-1,1.5,61,NaN,Infinity])assert.equal(isArrowSeekStep(value),false);
+});
+test('completion uses real playback time, excluding pauses and buffering',()=>{
+ const clock=new ListeningClock();clock.start(0);clock.start(5000);clock.pause(30000);
+ assert.equal(clock.seconds(90000),30); // Paused for a minute.
+ clock.start(90000);clock.pause(180000);
+ assert.equal(clock.seconds(180000),120);assert.equal(clock.qualifies(120,180000),true);
+ assert.equal(clock.qualifies(120.001,180000),false);
+});
+test('fast playback and skipping to the end do not satisfy the duration requirement',()=>{
+ const fast=new ListeningClock();fast.start(0);fast.pause(80000);
+ assert.equal(fast.qualifies(120,80000),false); // 120 seconds at 1.5x.
+ const seek=new ListeningClock();seek.start(0);seek.pause(1000);seek.start(10000);seek.pause(11000);
+ assert.equal(seek.seconds(11000),2);assert.equal(seek.qualifies(120,11000),false);
+ const stopped=new ListeningClock();assert.equal(stopped.qualifies(120,999999),false);
+});
+test('rewinding retains actual listening time without crediting the seek itself',()=>{
+ const clock=new ListeningClock();clock.start(0);clock.pause(60000);clock.start(65000);clock.pause(125000);
+ assert.equal(clock.qualifies(120,125000),true);
+});
+test('vertical arrows change volume by five percentage points within bounds',()=>{
+ assert.equal(arrowVolumeDelta('ArrowUp'),.05);assert.equal(arrowVolumeDelta('ArrowDown'),-.05);
+ assert.equal(arrowVolumeDelta('ArrowRight'),0);
+ assert.equal(clampVolume(1.05),1);assert.equal(clampVolume(-.05),0);
+ assert.equal(clampVolume(.95+arrowVolumeDelta('ArrowUp')),1);
 });

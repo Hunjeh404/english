@@ -11,7 +11,7 @@ import RecordingStudio from './recording-studio';
 import AudioUpload from './audio-upload';
 import LibraryFolders from './library-folders';
 import {filterReadings,sortReadings,sortFolders,READING_SORTS,isReadingSort,type ReadingSort} from '../lib/library';
-import {activeLoop,repeatTarget,seekTime,isArrowSeekStep,arrowSeekDelta,type PlaybackLoop} from '../lib/playback';
+import {activeLoop,repeatTarget,seekTime,isArrowSeekStep,arrowSeekDelta,arrowVolumeDelta,clampVolume,ListeningClock,type PlaybackLoop} from '../lib/playback';
 import type {Session} from '@supabase/supabase-js';
 
 type Photo={file:File;url:string};
@@ -36,6 +36,7 @@ export default function ReadingStudio(){
  const audio=useRef<HTMLAudioElement|null>(null),worker=useRef<Worker|null>(null),playId=useRef<string|null>(null),sampleUrl=useRef<string|null>(null),reader=useRef<HTMLDivElement|null>(null),playerPanel=useRef<HTMLDivElement|null>(null),busyRef=useRef(false),photosRef=useRef<Photo[]>([]);
  const [loop,setLoop]=useState<PlaybackLoop>({start:0,end:null,enabled:false});
  const loopRef=useRef<PlaybackLoop>(loop),readingAudio=useRef<HTMLAudioElement|null>(null),cue=useRef(0),loopFrame=useRef(0);
+ const [volume,setVolume]=useState(1);const volumeRef=useRef(1);
  const canUpload=!!account?.canUpload;
  const active=items.find(p=>p.id===selected),locked=!!generated||busy==='tts'||busy==='save';
  function guestProgress(){try{let g=JSON.parse(localStorage.getItem('english-guest-progress')||'{}') as {goal?:number;completed?:number;goalVersion?:number};if(g.goalVersion!==2){g={...g,goal:10,goalVersion:2};localStorage.setItem('english-guest-progress',JSON.stringify(g));}return g;}catch{return {goal:10,goalVersion:2};}}
@@ -61,6 +62,7 @@ export default function ReadingStudio(){
   setKey(sessionStorage.getItem('english-gemini')||'');
   try{const saved=localStorage.getItem('english-list-sort');if(isReadingSort(saved)){setSortOrder(saved);setSortDraft(saved);}}catch{}
   try{const seconds=Number(localStorage.getItem('english-arrow-seconds'));if(isArrowSeekStep(seconds)){setArrowStep(seconds);setArrowDraft(String(seconds));}}catch{}
+  try{const stored=localStorage.getItem('english-playback-volume');if(stored!==null&&Number.isFinite(Number(stored))){const value=clampVolume(Number(stored));volumeRef.current=value;setVolume(value);}}catch{}
   const draft=localStorage.getItem('english-draft');if(draft){try{const d=JSON.parse(draft);setTitle(d.title||'');setBody(d.body||'');setVoice(d.voice||'bf_emma');}catch{}}
   let live=true,lastToken:string|null|undefined;let chain=Promise.resolve();
   const synchronize=async(session:Session|null)=>{
@@ -97,7 +99,7 @@ export default function ReadingStudio(){
   const w=worker.current;
   w.onmessage=(e)=>{const d=e.data;if(d.type==='progress'){setStatus(d.message);setProgress(d.percent);}else if(d.type==='error'){busyRef.current=false;setBusy('');setError(`음성 생성에 실패했습니다. ${d.message}`);}else if(d.type==='done'){
     busyRef.current=false;setBusy('');const blob=new Blob([d.wav],{type:'audio/wav'});
-    if(sample){audio.current?.pause();if(sampleUrl.current)URL.revokeObjectURL(sampleUrl.current);sampleUrl.current=URL.createObjectURL(blob);const a=new Audio(sampleUrl.current);audio.current=a;a.onended=()=>{setNotice('미리듣기가 끝났습니다.');};void a.play().catch(()=>setNotice('미리듣기 준비 완료. 아래 버튼으로 들어보세요.'));setNotice('선택한 영국 음성 미리듣기');}
+    if(sample){audio.current?.pause();if(sampleUrl.current)URL.revokeObjectURL(sampleUrl.current);sampleUrl.current=URL.createObjectURL(blob);const a=new Audio(sampleUrl.current);a.volume=volumeRef.current;audio.current=a;a.onended=()=>{setNotice('미리듣기가 끝났습니다.');};void a.play().catch(()=>setNotice('미리듣기 준비 완료. 아래 버튼으로 들어보세요.'));setNotice('선택한 영국 음성 미리듣기');}
     else{const g={blob,duration:d.duration,id:uuid()};setGenerated(g);if(accountRef.current?.canUpload)void save(g);else setNotice('음성을 만들었습니다. 파일을 내려받아 사용하세요. 서버 업로드는 허용된 두 계정만 가능합니다.');}
   }};
   w.onerror=()=>{busyRef.current=false;setBusy('');setError('음성 엔진을 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');w.terminate();worker.current=null;};
@@ -118,18 +120,23 @@ export default function ReadingStudio(){
   else setError('B 지점은 A 지점보다 뒤에 지정해 주세요.');
  }
  function toggleLoop(){const range=loopRef.current;if(range.end===null)return;const next={...range,enabled:!range.enabled};updateLoop(next);if(next.enabled)moveTo(next.start);}
- function bellAudio(){return new Audio(URL.createObjectURL(new Blob([pcmToWav([chime()])],{type:'audio/wav'})));}
+ function changeVolume(value:number){const next=clampVolume(value);volumeRef.current=next;setVolume(next);if(audio.current)audio.current.volume=next;if(readingAudio.current)readingAudio.current.volume=next;try{localStorage.setItem('english-playback-volume',String(next));}catch{}}
+ function bellAudio(){const a=new Audio(URL.createObjectURL(new Blob([pcmToWav([chime()])],{type:'audio/wav'})));a.volume=volumeRef.current;return a;}
  async function togglePlay(){if(!active)return;setError('');
   if(playing){audio.current?.pause();setPlaying(false);setPaused(true);return;}
-  if(paused&&audio.current){await audio.current.play().then(()=>setPlaying(true)).catch(()=>setError('재생하지 못했습니다. 다시 시도해 주세요.'));setPaused(false);return;}
-  const startAt=seekTime(cue.current,active.duration,loopRef.current);stop();cue.current=startAt;const id=active.id;const a=new Audio(mediaUrl(active));a.loop=false;a.preload='auto';a.playbackRate=speed;readingAudio.current=a;audio.current=a;const sessionId=uuid();playId.current=sessionId;setElapsed(startAt);reader.current?.scrollTo({top:0});let practiced=activeLoop(loopRef.current);
+  if(paused&&audio.current){await audio.current.play().then(()=>{setPlaying(true);setPaused(false);}).catch(()=>setError('재생하지 못했습니다. 다시 시도해 주세요.'));return;}
+  const startAt=seekTime(cue.current,active.duration,loopRef.current);stop();cue.current=startAt;const id=active.id;const a=new Audio(mediaUrl(active));a.loop=false;a.preload='auto';a.playbackRate=speed;a.volume=volumeRef.current;readingAudio.current=a;audio.current=a;const sessionId=uuid();playId.current=sessionId;setElapsed(startAt);reader.current?.scrollTo({top:0});let practiced=activeLoop(loopRef.current);const listened=new ListeningClock();
   a.onloadedmetadata=()=>{if(playId.current===sessionId)a.currentTime=cue.current;};
   const checkLoop=()=>{const range=loopRef.current;if(activeLoop(range))practiced=true;const target=repeatTarget(a.currentTime,range);if(target!==null)a.currentTime=target;};
   a.onplay=()=>{if(playId.current!==sessionId)return;cancelAnimationFrame(loopFrame.current);const tick=()=>{if(playId.current!==sessionId||a.paused)return;checkLoop();loopFrame.current=requestAnimationFrame(tick);};loopFrame.current=requestAnimationFrame(tick);};
-  a.onpause=()=>{if(playId.current===sessionId)cancelAnimationFrame(loopFrame.current);};
+  const pauseClock=()=>{if(playId.current===sessionId)listened.pause(performance.now());};
+  a.onplaying=()=>{if(playId.current===sessionId){listened.start(performance.now());setPlaying(true);setPaused(false);}};
+  a.onwaiting=pauseClock;a.onseeking=pauseClock;
+  a.onseeked=()=>{if(playId.current===sessionId&&!a.paused&&!a.ended&&a.readyState>=3)listened.start(performance.now());};
+  a.onpause=()=>{if(playId.current===sessionId){pauseClock();cancelAnimationFrame(loopFrame.current);if(!a.ended){setPlaying(false);setPaused(true);}}};
   a.ontimeupdate=()=>{if(playId.current!==sessionId)return;checkLoop();cue.current=a.currentTime;setElapsed(a.currentTime);};a.onerror=()=>{if(playId.current!==sessionId)return;setError('음성을 불러오지 못했습니다. 연결을 확인하고 다시 재생해 주세요.');stop();};
-  a.onended=async()=>{if(playId.current!==sessionId)return;const range=loopRef.current;if(activeLoop(range)){practiced=true;a.currentTime=range.start;void a.play().catch(()=>{setError('구간을 다시 재생하지 못했습니다.');stop();});return;}
-   if(active.voice==='uploaded'){const end=bellAudio();audio.current=end;end.onended=()=>URL.revokeObjectURL(end.src);try{await end.play();}catch{}}const completedId=sessionId;playId.current=null;readingAudio.current=null;cue.current=0;setPlaying(false);setPaused(false);setElapsed(0);if(!completedId||practiced)return;
+  a.onended=async()=>{if(playId.current!==sessionId)return;pauseClock();const finishedAt=performance.now(),duration=Number.isFinite(a.duration)&&a.duration>0?a.duration:active.duration,qualifies=listened.qualifies(duration,finishedAt);const range=loopRef.current;if(activeLoop(range)){practiced=true;a.currentTime=range.start;void a.play().catch(()=>{setError('구간을 다시 재생하지 못했습니다.');stop();});return;}
+   if(active.voice==='uploaded'){const end=bellAudio();audio.current=end;end.onended=()=>URL.revokeObjectURL(end.src);try{await end.play();}catch{}}const completedId=sessionId;playId.current=null;readingAudio.current=null;cue.current=0;setPlaying(false);setPaused(false);setElapsed(0);if(!completedId||practiced)return;if(!qualifies){setNotice('실제 재생 시간이 음원 길이보다 짧아 듣기 횟수에 포함하지 않았습니다.');return;}
    if(!accountRef.current){const g=guestProgress();localStorage.setItem('english-guest-progress',JSON.stringify({...g,completed:(g.completed||0)+1}));await refresh();setNotice('한 번 듣기를 마쳤습니다. 비로그인 기록은 이 기기에 저장됩니다.');return;}const entry={id,playId:completedId,userId:accountRef.current.id};let queue=[];try{queue=JSON.parse(localStorage.getItem('english-completions')||'[]');}catch{}localStorage.setItem('english-completions',JSON.stringify([...queue,entry]));
    setNotice('한 번 듣기를 마쳤습니다. 다음 듣기는 재생 버튼을 눌러 주세요.');try{await flush();await refresh();const remaining=JSON.parse(localStorage.getItem('english-completions')||'[]');if(remaining.some((p:{playId:string})=>p.playId===completedId))setNotice('듣기 기록을 임시 보관했습니다. 연결되면 서버에 반영합니다.');}catch{setNotice('듣기 기록을 임시 보관했습니다. 연결되면 서버에 반영합니다.');}
   };
@@ -142,12 +149,12 @@ export default function ReadingStudio(){
  async function remove(){if(!active||deleteTitle!==active.title)return;setBusy('save');try{stop();await api(`/api/passages/${active.id}`,{method:'DELETE'});setDeleting(false);setDeleteTitle('');await refresh();setNotice('리딩과 원본 사진, 음성을 삭제했습니다.');}catch(e){setError((e as Error).message);}finally{setBusy('');}}
  useEffect(()=>{
   const onPlaybackKey=(event:KeyboardEvent)=>{
-   const isSpace=event.code==='Space',delta=arrowSeekDelta(event.code,arrowStep);
-   if((!isSpace&&!delta)||(isSpace&&event.repeat)||event.ctrlKey||event.altKey||event.metaKey||(!isSpace&&event.shiftKey)||view!=='library'||recordingOpen||!active)return;
+   const isSpace=event.code==='Space',delta=arrowSeekDelta(event.code,arrowStep),volumeDelta=arrowVolumeDelta(event.code);
+   if((!isSpace&&!delta&&!volumeDelta)||(isSpace&&event.repeat)||event.ctrlKey||event.altKey||event.metaKey||(!isSpace&&event.shiftKey)||view!=='library'||recordingOpen||!active)return;
    const target=event.target as HTMLElement|null;
-   const timeline=target instanceof HTMLInputElement&&target.type==='range'&&target.getAttribute('aria-label')==='음성 재생 위치';
-   if((!timeline&&target?.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]'))||target?.closest('[role="dialog"]')||document.querySelector('[role="dialog"]'))return;
-   event.preventDefault();if(delta)moveTo(currentTime()+delta);else if(playing)stop();else void togglePlay();
+   const playerSlider=target instanceof HTMLInputElement&&target.type==='range'&&['음성 재생 위치','재생 볼륨'].includes(target.getAttribute('aria-label')||'');
+   if((!playerSlider&&target?.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]'))||target?.closest('[role="dialog"]')||document.querySelector('[role="dialog"]'))return;
+   event.preventDefault();if(delta)moveTo(currentTime()+delta);else if(volumeDelta)changeVolume(volumeRef.current+volumeDelta);else void togglePlay();
   };
   window.addEventListener('keydown',onPlaybackKey);return()=>window.removeEventListener('keydown',onPlaybackKey);
  },[view,active?.id,playing,paused,speed,recordingOpen,arrowStep]);
@@ -171,6 +178,7 @@ export default function ReadingStudio(){
     <div className="listening-summary"><div><span className="summary-label">{account?'MY LISTENING · 계정 기록':'MY LISTENING · 이 기기 기록'}</span><div className="big-count">{active.completed}<span>/ {active.goal}<small>회</small></span>{active.completed>=active.goal&&<span className="done-pill"><Check size={13}/>목표 달성</span>}</div></div><div className="summary-right"><label htmlFor="listen-goal">목표 횟수</label><select id="listen-goal" value={active.goal} onChange={e=>changeGoal(Number(e.target.value))}>{Array.from(new Set([1,3,5,7,10,15,20,30,50,100,active.goal])).sort((a,b)=>a-b).map(n=><option key={n} value={n}>{n}회</option>)}</select></div><div className="summary-track"><span style={{width:`${Math.min(100,active.completed/active.goal*100)}%`}}/></div></div>
     {(active.body||originals)&&<><div className="reading-toolbar"><span>{originals?'ORIGINAL PAGES':'THE PASSAGE'}</span><div><button aria-label="본문 글자 작게" onClick={()=>setFontSize(s=>Math.max(16,s-2))}>A−</button><button aria-label="본문 글자 크게" onClick={()=>setFontSize(s=>Math.min(34,s+2))}>A+</button></div></div><div ref={reader} className="passage-paper" style={{fontSize}}>{originals?<div className="original-pages">{(JSON.parse(active.images) as string[]).length?(JSON.parse(active.images) as string[]).map((_,i)=><a key={i} href={mediaUrl(active,'image',i)} target="_blank" rel="noreferrer"><img src={mediaUrl(active,'image',i)} alt={`원본 교재 ${i+1}쪽`}/></a>):<p className="no-images">이 리딩은 텍스트로 추가되어 원본 사진이 없습니다.</p>}</div>:active.body.split(/\n\s*\n/).map((p,i)=><p key={i} lang="en-GB">{p}</p>)}</div></>}
     <div className="player" ref={playerPanel}><div className="player-line"><span>{formatTime(elapsed)}</span><input className="audio-seek" aria-label="음성 재생 위치" aria-valuetext={formatTime(elapsed)} type="range" min="0" max={active.duration} step="0.05" value={Math.min(elapsed,active.duration)} disabled={recordingOpen} onChange={e=>moveTo(Number(e.target.value))}/><span>{formatTime(active.duration)}</span></div><div className="player-controls"><div className="speed-control"><label htmlFor="speed">재생 속도</label><select id="speed" value={speed} onChange={e=>{setSpeed(Number(e.target.value));if(readingAudio.current)readingAudio.current.playbackRate=Number(e.target.value);}}>{[.75,.85,1,1.1,1.25,1.5].map(n=><option key={n} value={n}>{n}×</option>)}</select></div><button className="play-button" disabled={recordingOpen} onClick={togglePlay}>{playing?<Pause size={23} fill="currentColor"/>:<Play size={23} fill="currentColor"/>}{playing?'일시정지':paused?'이어서 듣기':loop.enabled?'구간 듣기':'한 번 듣기'}</button><button className="stop-button" disabled={!playing&&!paused&&!elapsed} onClick={stop}><Square size={16} fill="currentColor"/>정지</button></div>
+     <label className="playback-volume"><Volume2 size={16}/><span>볼륨</span><input type="range" aria-label="재생 볼륨" min="0" max="100" step="5" value={Math.round(volume*100)} onChange={e=>changeVolume(Number(e.target.value)/100)}/><strong>{Math.round(volume*100)}%</strong></label>
      <div className="seek-buttons" role="group" aria-label="재생 시간 이동"><div>{[10,5,3,1].map(n=><button key={n} aria-label={`${n}초 뒤로`} disabled={recordingOpen} onClick={()=>moveTo(currentTime()-n)}>−{n}초</button>)}</div><div>{[1,3,5,10].map(n=><button key={n} aria-label={`${n}초 앞으로`} disabled={recordingOpen} onClick={()=>moveTo(currentTime()+n)}>+{n}초</button>)}</div></div>
      <div className="loop-controls" role="group" aria-label="구간 반복"><button disabled={recordingOpen} onClick={()=>setLoopPoint('a')}>A 시작 <span>{formatTime(loop.start)}</span></button><button disabled={recordingOpen} onClick={()=>setLoopPoint('b')}>B 끝 <span>{loop.end===null?'—':formatTime(loop.end)}</span></button><button className={loop.enabled?'enabled':''} aria-pressed={loop.enabled} disabled={loop.end===null||recordingOpen} onClick={toggleLoop}>구간 반복 {loop.enabled?'켜짐':'꺼짐'}</button><button aria-label="반복 구간 초기화" disabled={recordingOpen} onClick={()=>updateLoop({start:0,end:null,enabled:false})}><RotateCcw size={15}/></button></div>
     </div>
